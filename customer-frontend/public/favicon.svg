@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background: Brand Orange Rounded Square -->
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#f97316"/>
+  
+  <!-- Icon: White Utensils (Stylized) -->
+  <path d="M22 16v20c0 3 2 5 5 5h2c3 0 5-2 5-5V16" stroke="white" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M28 16v32" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  
+  <path d="M46 16v20c0 3-2 5-5 5s-5-2-5-5V16" fill="white"/>
+  <path d="M41 41v7" stroke="white" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -41,18 +41,23 @@ export default function Layout({ children }) {
                             {/* User Menu */}
                             {user ? (
                                 <div className="flex items-center space-x-4">
-                                    <div className="hidden sm:flex flex-col items-end">
-                                        <div className="flex items-center space-x-3 mb-1">
-                                            <Link to="/orders" className="text-xs font-bold text-brand-orange hover:text-orange-700 bg-orange-50 px-2 py-1 rounded-md transition">
-                                                My Orders
-                                            </Link>
-                                            <span className="text-sm font-semibold text-gray-800">{user.name}</span>
-                                        </div>
+                                    {/* Desktop: My Orders Link */}
+                                    <Link to="/orders" className="hidden sm:block text-sm font-bold text-gray-600 hover:text-brand-orange transition mr-2">
+                                        My Orders
+                                    </Link>
+
+                                    {/* Mobile: My Orders Icon */}
+                                    <Link to="/orders" className="sm:hidden p-2 text-gray-600 hover:text-brand-orange">
+                                        <Menu size={24} />
+                                    </Link>
+
+                                    <div className="hidden sm:flex flex-col items-end border-l border-gray-200 pl-4">
+                                        <span className="text-sm font-semibold text-gray-800">{user.name}</span>
                                         <span className="text-xs text-gray-500">Customer</span>
                                     </div>
                                     <button
                                         onClick={logout}
-                                        className="p-2 text-gray-400 hover:text-brand-red transition"
+                                        className="p-2 text-gray-400 hover:text-brand-red transition ml-2"
                                         title="Sign Out"
                                     >
                                         <LogOut size={20} />

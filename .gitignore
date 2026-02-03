@@ -4,3 +4,6 @@ node_modules
 deploy_package.zip
 dist
 coverage
+
+*.zip
+clear_orders.js

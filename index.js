@@ -1,8 +1,8 @@
-import mongoose from 'mongoose';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 // --- Global Configuration & Cache ---
 let conn = null;
@@ -63,7 +63,7 @@ const OrderSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Use existing models if already compiled (for HMR/Lambda cold start edge cases)
+// Use existing models if already compiled
 const Admin = mongoose.models.Admin || mongoose.model('Admin', AdminSchema);
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Menu = mongoose.models.Menu || mongoose.model('Menu', MenuSchema);
@@ -125,7 +125,7 @@ const authHandlers = {
     const { email, password } = data;
     if (!email || !password) return sendResponse(400, { error: 'Missing credentials' });
 
-    // Check if admin exists (Optional: Restrict to one admin or specific logic)
+    // Check if admin exists
     const existing = await Admin.findOne({ email });
     if (existing) return sendResponse(400, { error: 'Admin already exists' });
 
@@ -157,7 +157,6 @@ const authHandlers = {
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = await User.create({ name, email, password: hashedPassword, phone, address });
 
-    // Generate token immediately for convenience
     const token = jwt.sign({ id: newUser._id, email: newUser.email, role: 'customer' }, JWT_SECRET, { expiresIn: '30d' });
 
     return sendResponse(201, {
@@ -199,31 +198,71 @@ const menuHandlers = {
     return sendResponse(200, items);
   },
 
+  createBulk: async (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return sendResponse(400, { error: 'Invalid input: Expected an array of items' });
+    }
+
+    // Basic validation and formatting
+    const validItems = items.map(item => ({
+      name: item.name,
+      description: item.description || '',
+      price: Number(item.price),
+      category: item.category || 'Uncategorized',
+      imageUrl: item.imageUrl || '', // Optional
+    })).filter(item => item.name && !isNaN(item.price));
+
+    if (validItems.length === 0) {
+      return sendResponse(400, { error: 'No valid items found to insert' });
+    }
+
+    const result = await Menu.insertMany(validItems);
+    return sendResponse(201, { message: 'Bulk import successful', count: result.length, items: result });
+  },
+
+  createBulk: async (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return sendResponse(400, { error: 'Invalid input: Expected an array of items' });
+    }
+
+    // Basic validation and formatting
+    const validItems = items.map(item => ({
+      name: item.name,
+      description: item.description || '',
+      price: Number(item.price),
+      category: item.category || 'Uncategorized',
+      imageUrl: item.imageUrl || '', // Optional
+    })).filter(item => item.name && !isNaN(item.price));
+
+    if (validItems.length === 0) {
+      return sendResponse(400, { error: 'No valid items found to insert' });
+    }
+
+    const result = await Menu.insertMany(validItems);
+    return sendResponse(201, { message: 'Bulk import successful', count: result.length, items: result });
+  },
+
   create: async (data) => {
     const { name, description, price, category, fileName, fileType } = data;
 
-    // Create DB Entry first (or generate ID to use as key)
     const newItem = new Menu({
       name,
       description,
       price,
       category,
-      // We will assume the image URL based on the key we are about to generate
     });
 
-    // Generate specific key for S3
     const key = `menu/${newItem._id}-${Date.now()}-${fileName}`;
     newItem.imageUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
 
     await newItem.save();
 
-    // Generate Presigned URL
     const command = new PutObjectCommand({
       Bucket: S3_BUCKET,
       Key: key,
       ContentType: fileType,
     });
-    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 }); // 5 mins
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
 
     return sendResponse(201, {
       item: newItem,
@@ -233,6 +272,37 @@ const menuHandlers = {
   },
 
   update: async (id, data) => {
+    // Check if new image is being uploaded
+    if (data.fileName && data.fileType) {
+      const item = await Menu.findById(id);
+      if (!item) return sendResponse(404, { error: 'Item not found' });
+
+      // Generate new S3 Key and URL
+      const key = `menu/${id}-${Date.now()}-${data.fileName}`;
+      const imageUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+
+      // Generate Presigned URL
+      const command = new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        ContentType: data.fileType,
+      });
+      const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+
+      // Clean payload
+      const updatePayload = { ...data, imageUrl };
+      delete updatePayload.fileName;
+      delete updatePayload.fileType;
+
+      const updated = await Menu.findByIdAndUpdate(id, updatePayload, { new: true });
+      return sendResponse(200, {
+        ...updated.toObject(),
+        presignedUploadUrl: presignedUrl, // Return this for frontend to upload
+        uploadKey: key
+      });
+    }
+
+    // Standard update (no image change)
     const updated = await Menu.findByIdAndUpdate(id, data, { new: true });
     if (!updated) return sendResponse(404, { error: 'Item not found' });
     return sendResponse(200, updated);
@@ -242,10 +312,8 @@ const menuHandlers = {
     const item = await Menu.findById(id);
     if (!item) return sendResponse(404, { error: 'Item not found' });
 
-    // Optional: Delete from S3 if imageUrl is stored and matches pattern
     if (item.imageUrl) {
       try {
-        // Extract key from URL if possible, or just skip if complex
         const urlParts = item.imageUrl.split('.com/');
         if (urlParts.length > 1) {
           const key = urlParts[1];
@@ -253,7 +321,6 @@ const menuHandlers = {
         }
       } catch (err) {
         console.error('Failed to delete S3 object', err);
-        // Continue to delete DB record anyway
       }
     }
 
@@ -275,7 +342,6 @@ const orderHandlers = {
   },
 
   update: async (id, data) => {
-    // Basic validation or specific field updates can go here
     const { status } = data;
     const updated = await Order.findByIdAndUpdate(id, { status }, { new: true });
     if (!updated) return sendResponse(404, { error: 'Order not found' });
@@ -298,19 +364,26 @@ const orderHandlers = {
     });
 
     return sendResponse(201, newOrder);
+  },
+
+  getMyOrders: async (userId) => {
+    // Fetch orders for a specific user ID, sorted by newest first
+    const orders = await Order.find({ userId }).sort({ createdAt: -1 });
+    return sendResponse(200, orders);
   }
 };
 
 // --- Main Handler ---
 
-export const handler = async (event) => {
-  // Make sure to wait for the event loop content to finish (e.g. DB connection)
-  // AWS context.callbackWaitsForEmptyEventLoop = false; // Usually handled by returning response
-
+exports.handler = async (event) => {
   try {
+    // Check Critical Env Vars
+    if (!MONGO_URI) {
+      return sendResponse(500, { error: 'Configuration Error', details: 'MONGO_URI is missing in Lambda Environment Variables.' });
+    }
+
     await connectDB();
 
-    // --- Normalize Event (Handle HTTP API v2 vs REST/v1) ---
     let method = event.httpMethod;
     let path = event.path;
 
@@ -320,120 +393,67 @@ export const handler = async (event) => {
       path = event.rawPath;
     }
 
-    // Default to empty if missing (avoids crash, though route will 404)
     if (!path) path = '';
 
-    // Assign to common variables used below
-    const httpMethod = method; // Code below uses 'httpMethod'
-
+    const httpMethod = method;
     console.log(`Processing: ${httpMethod} ${path}`);
 
-    // Normalized path (API Gateway might pass different properties depending on usage)
-    // We strip stage prefixes or just check 'endsWith' to be safe against different Gateway configs
     const cleanPath = path.endsWith('/') ? path.slice(0, -1) : path;
-
-    // Helper to check route
     const isRoute = (p) => cleanPath === p || cleanPath.endsWith(p);
 
-    // --- Global CORS Preflight Handler ---
+    // --- Global CORS ---
     if (httpMethod === 'OPTIONS') {
       return sendResponse(200, {});
     }
 
     // --- Public Routes ---
+    if (httpMethod === 'GET' && isRoute('/menu')) return await menuHandlers.getAll();
+    if (httpMethod === 'POST' && isRoute('/auth/register')) return await authHandlers.register(parseBody(event));
+    if (httpMethod === 'POST' && isRoute('/auth/login')) return await authHandlers.login(parseBody(event));
+    if (httpMethod === 'POST' && isRoute('/auth/user/register')) return await authHandlers.registerUser(parseBody(event));
+    if (httpMethod === 'POST' && isRoute('/auth/user/login')) return await authHandlers.loginUser(parseBody(event));
+    if (httpMethod === 'POST' && isRoute('/orders')) return await orderHandlers.create(parseBody(event));
 
-    // GET /menu
-    if (httpMethod === 'GET' && isRoute('/menu')) {
-      return await menuHandlers.getAll();
-    }
-
-    // POST /auth/register
-    if (httpMethod === 'POST' && isRoute('/auth/register')) {
-      return await authHandlers.register(parseBody(event));
-    }
-
-    // POST /auth/login
-    if (httpMethod === 'POST' && isRoute('/auth/login')) {
-      return await authHandlers.login(parseBody(event));
-    }
-
-    // --- Customer Auth Routes ---
-
-    // POST /auth/user/register
-    if (httpMethod === 'POST' && isRoute('/auth/user/register')) {
-      return await authHandlers.registerUser(parseBody(event));
-    }
-
-    // POST /auth/user/login
-    if (httpMethod === 'POST' && isRoute('/auth/user/login')) {
-      return await authHandlers.loginUser(parseBody(event));
-    }
-
-    // POST /orders (Public - Guest/User Checkout)
-    if (httpMethod === 'POST' && isRoute('/orders')) {
-      return await orderHandlers.create(parseBody(event));
-    }
-
-    // --- Protected Routes (Middleware Check) ---
-
+    // --- Protected Routes ---
     let user;
     try {
       user = verifyToken(event);
     } catch (err) {
       if (httpMethod === 'OPTIONS') return sendResponse(200, {});
-      console.log('Auth Failed:', err.message); // Debug log
       return sendResponse(401, { error: 'Unauthorized: ' + err.message });
     }
 
-    // --- Dynamic Route Helper (Defined BEFORE usage) ---
-    // Extract ID from path if not in pathParameters (for /{proxy+} integration)
     const getIdFromPath = () => {
       if (event.pathParameters && event.pathParameters.id) return event.pathParameters.id;
       const parts = cleanPath.split('/');
       return parts[parts.length - 1]; // Assume last part is ID
     };
 
-    // --- Admin Management Routes ---
-
-    // GET /admins
-    if (httpMethod === 'GET' && isRoute('/admins')) {
-      return await authHandlers.getAll();
+    // POST /menu/bulk (Import)
+    if (httpMethod === 'POST' && isRoute('/menu/bulk')) {
+      return await menuHandlers.createBulk(parseBody(event));
     }
 
-    // DELETE /admins/:id
-    if (httpMethod === 'DELETE' && cleanPath.includes('/admins/') && !isRoute('/admins')) {
-      return await authHandlers.delete(getIdFromPath());
+    // GET /orders/mine (Customer History)
+    if (httpMethod === 'GET' && isRoute('/orders/mine')) {
+      return await orderHandlers.getMyOrders(user.userId);
     }
 
+    // POST /menu/bulk (Import)
+    if (httpMethod === 'POST' && isRoute('/menu/bulk')) {
+      return await menuHandlers.createBulk(parseBody(event));
+    }
+
+    // --- Admin Routes ---
+    if (httpMethod === 'GET' && isRoute('/admins')) return await authHandlers.getAll();
+    if (httpMethod === 'DELETE' && cleanPath.includes('/admins/') && !isRoute('/admins')) return await authHandlers.delete(getIdFromPath());
     // POST /menu (Create) - Strict match
-    if (httpMethod === 'POST' && isRoute('/menu')) {
-      return await menuHandlers.create(parseBody(event));
-    }
-
-    // PUT /menu/:id
-    if (httpMethod === 'PUT' && cleanPath.includes('/menu/') && !isRoute('/menu')) {
-      return await menuHandlers.update(getIdFromPath(), parseBody(event));
-    }
-
-    // DELETE /menu/:id
-    if (httpMethod === 'DELETE' && cleanPath.includes('/menu/') && !isRoute('/menu')) {
-      return await menuHandlers.delete(getIdFromPath());
-    }
-
-    // GET /orders
-    if (httpMethod === 'GET' && isRoute('/orders')) {
-      return await orderHandlers.getAll();
-    }
-
-    // GET /orders/:id
-    if (httpMethod === 'GET' && cleanPath.includes('/orders/') && !isRoute('/orders')) {
-      return await orderHandlers.getOne(getIdFromPath());
-    }
-
-    // PUT /orders/:id (Update Status)
-    if (httpMethod === 'PUT' && cleanPath.includes('/orders/') && !isRoute('/orders')) {
-      return await orderHandlers.update(getIdFromPath(), parseBody(event));
-    }
+    if (httpMethod === 'POST' && isRoute('/menu')) return await menuHandlers.create(parseBody(event));
+    if (httpMethod === 'PUT' && cleanPath.includes('/menu/') && !isRoute('/menu')) return await menuHandlers.update(getIdFromPath(), parseBody(event));
+    if (httpMethod === 'DELETE' && cleanPath.includes('/menu/') && !isRoute('/menu')) return await menuHandlers.delete(getIdFromPath());
+    if (httpMethod === 'GET' && isRoute('/orders')) return await orderHandlers.getAll();
+    if (httpMethod === 'GET' && cleanPath.includes('/orders/') && !isRoute('/orders')) return await orderHandlers.getOne(getIdFromPath());
+    if (httpMethod === 'PUT' && cleanPath.includes('/orders/') && !isRoute('/orders')) return await orderHandlers.update(getIdFromPath(), parseBody(event));
 
     return sendResponse(404, { error: `Route not found: ${httpMethod} ${path}` });
 

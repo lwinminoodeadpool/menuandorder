@@ -70,13 +70,21 @@ export default function MenuForm() {
         setLoading(true);
 
         try {
+            let payload = { ...formData };
+            let presignedUrl = null;
+
+            // Include file info if a new file is selected
+            if (file) {
+                payload.fileName = file.name;
+                payload.fileType = file.type;
+            }
+
             if (isEdit) {
-                // Edit Mode (Updates Image only if needed - logic might need backend adjustment if file changed)
-                // Current backend PUT /menu/:id just updates fields.
-                // It doesn't handle new image upload in the same way as POST.
-                // For simplicity in this iteration, we focus on uploading NEW items with images.
-                // If editing, we just update text fields.
-                await api.put(`/menu/${id}`, formData);
+                // Edit Mode
+                const { data } = await api.put(`/menu/${id}`, payload);
+                if (data.presignedUploadUrl) {
+                    presignedUrl = data.presignedUploadUrl;
+                }
                 toast.success('Item updated successfully');
             } else {
                 // Create Mode
@@ -85,24 +93,18 @@ export default function MenuForm() {
                     setLoading(false);
                     return;
                 }
-
-                // 1. Create Item + Get Presigned URL
-                const createPayload = {
-                    ...formData,
-                    fileName: file.name,
-                    fileType: file.type
-                };
-
-                const { data } = await api.post('/menu', createPayload);
-                const { presignedUploadUrl } = data;
-
-                // 2. Upload to S3
-                await axios.put(presignedUploadUrl, file, {
-                    headers: { 'Content-Type': file.type }
-                });
-
+                const { data } = await api.post('/menu', payload);
+                presignedUrl = data.presignedUploadUrl;
                 toast.success('Item created successfully');
             }
+
+            // Perform Upload if a URL was returned
+            if (presignedUrl && file) {
+                await axios.put(presignedUrl, file, {
+                    headers: { 'Content-Type': file.type }
+                });
+            }
+
             navigate('/menu');
         } catch (error) {
             console.error(error);
@@ -133,7 +135,6 @@ export default function MenuForm() {
                                 onChange={handleFileChange}
                                 accept="image/*"
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                disabled={isEdit} // Disable image update for edit mode initially to keep it simple as per backend constraint
                             />
 
                             {file ? (
@@ -144,7 +145,7 @@ export default function MenuForm() {
                             ) : existingImage ? (
                                 <div className="flex flex-col items-center">
                                     <img src={existingImage} className="w-32 h-32 object-cover rounded-lg mb-4" />
-                                    <span className="text-gray-400 text-sm">(Editing image not supported)</span>
+                                    <span className="text-gray-400 text-sm">Click to change image</span>
                                 </div>
                             ) : (
                                 <div className="text-gray-400 flex flex-col items-center">

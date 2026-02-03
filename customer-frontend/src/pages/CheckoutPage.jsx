@@ -50,6 +50,7 @@ export default function CheckoutPage() {
                 userId: user?._id || undefined,
                 items: cart.map(item => ({
                     menuId: item._id,
+                    name: item.name,
                     quantity: item.quantity,
                     priceAtOrder: item.price
                 })),

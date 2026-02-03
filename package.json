@@ -2,17 +2,17 @@
     "name": "menu-order-backend",
     "version": "1.0.0",
     "description": "Serverless Monolithic Lambda Backend for Menu and Order System",
-    "main": "index.mjs",
-    "type": "module",
+    "main": "index.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "dependencies": {
-        "mongoose": "^8.0.0",
-        "jsonwebtoken": "^9.0.2",
-        "bcryptjs": "^2.4.3",
         "@aws-sdk/client-s3": "^3.400.0",
-        "@aws-sdk/s3-request-presigner": "^3.400.0"
+        "@aws-sdk/s3-request-presigner": "^3.400.0",
+        "bcryptjs": "^2.4.3",
+        "jsonwebtoken": "^9.0.2",
+        "mongoose": "^8.0.0",
+        "xlsx": "^0.18.5"
     },
     "engines": {
         "node": ">=18.0.0"

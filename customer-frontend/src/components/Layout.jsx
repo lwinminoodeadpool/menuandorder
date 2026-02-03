@@ -53,7 +53,6 @@ export default function Layout({ children }) {
 
                                     <div className="hidden sm:flex flex-col items-end border-l border-gray-200 pl-4">
                                         <span className="text-sm font-semibold text-gray-800">{user.name}</span>
-                                        <span className="text-xs text-gray-500">Customer</span>
                                     </div>
                                     <button
                                         onClick={logout}
@@ -77,7 +76,7 @@ export default function Layout({ children }) {
             </nav>
 
             {/* Main Content */}
-            <main className="flex-grow">
+            <main className="flex-grow pt-20">
                 {children}
             </main>
 

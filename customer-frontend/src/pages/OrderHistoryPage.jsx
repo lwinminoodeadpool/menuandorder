@@ -68,10 +68,13 @@ export default function OrderHistoryPage() {
                     >
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
-                                    {order.status}
-                                </span>
-                                <div className="text-xs text-gray-400 mt-2">
+                                <div className="flex items-center space-x-3 mb-2">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
+                                        {order.status}
+                                    </span>
+                                    <span className="text-xs font-mono text-gray-400">#{order._id.slice(-6).toUpperCase()}</span>
+                                </div>
+                                <div className="text-xs text-gray-400">
                                     {new Date(order.createdAt).toLocaleDateString()} • {new Date(order.createdAt).toLocaleTimeString()}
                                 </div>
                             </div>

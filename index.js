@@ -10,6 +10,7 @@ let conn = null;
 const S3_BUCKET = process.env.S3_BUCKET_NAME;
 const S3_REGION = process.env.S3_REGION || 'eu-north-1';
 const JWT_SECRET = process.env.JWT_SECRET;
+const PORT = process.env.PORT || 5001;
 const MONGO_URI = process.env.MONGO_URI;
 
 // Initialize S3 Client
@@ -55,6 +56,7 @@ const OrderSchema = new mongoose.Schema({
   customerTable: { type: String }, // Optional for dine-in
   items: [{
     menuId: { type: mongoose.Schema.Types.ObjectId, ref: 'Menu' },
+    name: { type: String }, // Store item name for historical accuracy
     quantity: { type: Number, default: 1 },
     priceAtOrder: { type: Number }
   }],

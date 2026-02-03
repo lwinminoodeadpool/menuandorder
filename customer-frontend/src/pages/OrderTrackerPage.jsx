@@ -72,7 +72,7 @@ export default function OrderTrackerPage() {
                 <Link to="/orders" className="p-2 hover:bg-gray-100 rounded-full transition">
                     <ArrowLeft size={24} className="text-gray-600" />
                 </Link>
-                <h1 className="text-2xl font-bold text-gray-900">Order #{order._id.slice(-6)}</h1>
+                <h1 className="text-2xl font-bold text-gray-900">Order #{order._id.slice(-6).toUpperCase()}</h1>
             </div>
 
             {/* Tracker UI */}

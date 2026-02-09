@@ -1,23 +1,36 @@
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
-import { Clock, CheckCircle, ChefHat, DollarSign } from 'lucide-react';
+import { Clock, CheckCircle, ChefHat, DollarSign, LayoutGrid, List, Filter, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function OrderList() {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [viewMode, setViewMode] = useState('grid');
+    const [filters, setFilters] = useState({
+        status: '',
+        startDate: '',
+        endDate: ''
+    });
 
     useEffect(() => {
         fetchOrders();
-    }, []);
+    }, [filters]);
 
     const fetchOrders = async () => {
         try {
             setError(null);
-            console.log('Fetching orders...');
-            const response = await api.get('/orders');
+            setLoading(true);
+
+            const params = new URLSearchParams();
+            if (filters.status) params.append('status', filters.status);
+            if (filters.startDate) params.append('startDate', filters.startDate);
+            if (filters.endDate) params.append('endDate', filters.endDate);
+
+            console.log('Fetching orders with params:', params.toString());
+            const response = await api.get(`/orders?${params.toString()}`);
             console.log('Orders API Response:', response);
 
             const { data } = response;
@@ -47,10 +60,32 @@ export default function OrderList() {
 
             await api.put(`/orders/${id}`, { status: newStatus });
             toast.success(`Order marked as ${newStatus}`);
+            fetchOrders(); // Refresh to ensure backend validation didn't reject it
         } catch (error) {
-            toast.error('Failed to update status');
+            toast.error(error.response?.data?.error || 'Failed to update status');
             fetchOrders(); // Revert
         }
+    };
+
+    const getStatusActions = (currentStatus) => {
+        const actions = [];
+        switch (currentStatus) {
+            case 'pending':
+                actions.push({ value: 'preparing', label: 'Start Cooking', icon: ChefHat, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' });
+                actions.push({ value: 'cancelled', label: 'Cancel', icon: XCircle, color: 'bg-red-100 text-red-700 hover:bg-red-200' });
+                break;
+            case 'preparing':
+                actions.push({ value: 'served', label: 'Serve Order', icon: CheckCircle, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' });
+                actions.push({ value: 'cancelled', label: 'Cancel', icon: XCircle, color: 'bg-red-100 text-red-700 hover:bg-red-200' });
+                break;
+            case 'served':
+                actions.push({ value: 'paid', label: 'Mark Paid', icon: DollarSign, color: 'bg-green-100 text-green-700 hover:bg-green-200' });
+                actions.push({ value: 'cancelled', label: 'Cancel', icon: XCircle, color: 'bg-red-100 text-red-700 hover:bg-red-200' });
+                break;
+            default:
+                break;
+        }
+        return actions;
     };
 
     const formatPrice = (price) => {
@@ -85,69 +120,153 @@ export default function OrderList() {
     </div>;
 
     return (
-        <div>
-            <h2 className="text-3xl font-bold text-gray-800 mb-8">Order Management</h2>
+        <div className="p-6 max-w-7xl mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <h2 className="text-3xl font-bold text-gray-800">Order Management</h2>
 
-            <div className="space-y-4">
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                    <button
+                        onClick={() => setViewMode('grid')}
+                        className={clsx("p-2 rounded-md transition", viewMode === 'grid' ? "bg-white shadow text-brand-blue" : "text-gray-500 hover:text-gray-700")}
+                    >
+                        <LayoutGrid size={20} />
+                    </button>
+                    <button
+                        onClick={() => setViewMode('list')}
+                        className={clsx("p-2 rounded-md transition", viewMode === 'list' ? "bg-white shadow text-brand-blue" : "text-gray-500 hover:text-gray-700")}
+                    >
+                        <List size={20} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-wrap gap-4 items-center">
+                <div className="flex items-center space-x-2 text-gray-500">
+                    <Filter size={18} />
+                    <span className="font-medium">Filter:</span>
+                </div>
+
+                <select
+                    value={filters.status}
+                    onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="border-gray-200 rounded-lg text-sm focus:ring-brand-blue"
+                >
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="preparing">Cooking</option>
+                    <option value="served">Served</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+
+                <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-400">From:</span>
+                    <input
+                        type="date"
+                        value={filters.startDate}
+                        onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                        className="border-gray-200 rounded-lg text-sm"
+                    />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-400">To:</span>
+                    <input
+                        type="date"
+                        value={filters.endDate}
+                        onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                        className="border-gray-200 rounded-lg text-sm"
+                    />
+                </div>
+
+                <button
+                    onClick={() => setFilters({ status: '', startDate: '', endDate: '' })}
+                    className="text-sm text-red-500 hover:text-red-700 underline ml-auto"
+                >
+                    Clear Filters
+                </button>
+            </div>
+
+            <div className={clsx("gap-6", viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : "space-y-4")}>
                 {orders.map((order) => {
                     const StatusIcon = getStatusIcon(order.status);
+                    const availableActions = getStatusActions(order.status);
+
                     return (
-                        <div key={order._id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+                        <div key={order._id} className={clsx(
+                            "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition",
+                            viewMode === 'list' && "flex flex-col md:flex-row md:items-center p-4"
+                        )}>
 
-                            <div className="flex-1">
-                                <div className="flex items-center space-x-3 mb-2">
-                                    <span className="font-bold text-lg text-gray-800">#{order._id.slice(-6).toUpperCase()}</span>
-                                    <span className={clsx("px-3 py-1 rounded-full text-xs font-bold uppercase flex items-center space-x-1", getStatusColor(order.status))}>
-                                        <StatusIcon size={14} />
-                                        <span>{order.status}</span>
+                            {/* Header / Info */}
+                            <div className={clsx("p-5", viewMode === 'list' && "p-0 flex-1 md:flex md:items-center md:gap-8")}>
+                                <div className={clsx("flex items-center justify-between mb-4", viewMode === 'list' && "mb-0 md:w-1/4")}>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="font-mono font-bold text-gray-600">#{order._id.slice(-6).toUpperCase()}</span>
+                                        <span className={clsx("px-2.5 py-0.5 rounded-full text-xs font-bold uppercase flex items-center space-x-1", getStatusColor(order.status))}>
+                                            <StatusIcon size={12} />
+                                            <span>{order.status}</span>
+                                        </span>
+                                    </div>
+                                    {viewMode === 'grid' && <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                                </div>
+
+                                <div className={clsx("mb-4", viewMode === 'list' && "mb-0 md:w-1/4")}>
+                                    <div className="font-medium text-gray-800">{order.customerName}</div>
+                                    <div className="text-sm text-gray-500">{order.customerTable ? `Table ${order.customerTable}` : 'Takeout'}</div>
+                                    {viewMode === 'list' && <div className="text-xs text-gray-400 md:hidden">{new Date(order.createdAt).toLocaleString()}</div>}
+                                </div>
+
+                                {/* Items Summary */}
+                                <div className={clsx("mb-4", viewMode === 'list' && "mb-0 md: flex-1")}>
+                                    <div className="text-sm text-gray-600 line-clamp-2">
+                                        {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-1">{order.items.length} items total</div>
+                                </div>
+
+                                {/* Total */}
+                                <div className={clsx("flex justify-between items-center", viewMode === 'list' && "md:w-32 md:justify-end md:mr-8")}>
+                                    <span className={clsx("font-bold text-lg text-brand-blue", viewMode === 'grid' && "block")}>
+                                        {formatPrice(order.totalAmount)}
                                     </span>
-                                    <span className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleString()}</span>
-                                </div>
-
-                                <div className="text-gray-600 mb-1">
-                                    <span className="font-medium">Customer:</span> {order.customerName} {order.customerTable && `(Table ${order.customerTable})`}
-                                </div>
-
-                                <div className="text-sm text-gray-500">
-                                    {order.items.length} Items • <span className="font-bold text-brand-blue">{formatPrice(order.totalAmount)}</span>
                                 </div>
                             </div>
 
-                            {/* Actions */}
-                            <div className="flex items-center space-x-3 bg-gray-50 p-2 rounded-lg">
-                                <span className="text-xs font-semibold text-gray-500 uppercase">Set Status:</span>
-
-                                {[
-                                    { value: 'pending', label: 'Pending', icon: Clock, color: 'hover:bg-yellow-100 hover:text-yellow-700' },
-                                    { value: 'preparing', label: 'Cooking', icon: ChefHat, color: 'hover:bg-blue-100 hover:text-blue-700' },
-                                    { value: 'served', label: 'Served', icon: CheckCircle, color: 'hover:bg-purple-100 hover:text-purple-700' },
-                                    { value: 'paid', label: 'Paid', icon: DollarSign, color: 'hover:bg-green-100 hover:text-green-700' }
-                                ].map((btn) => (
-                                    <button
-                                        key={btn.value}
-                                        onClick={() => handleStatusChange(order._id, btn.value)}
-                                        className={clsx(
-                                            "p-2 rounded-md transition-all",
-                                            order.status === btn.value ? "bg-white shadow-sm ring-1 ring-gray-200" : "text-gray-400",
-                                            btn.color
-                                        )}
-                                        title={btn.label}
-                                    >
-                                        <btn.icon size={20} />
-                                    </button>
-                                ))}
-                            </div>
+                            {/* Actions Footer */}
+                            {(availableActions.length > 0 || viewMode === 'list') && (
+                                <div className={clsx(
+                                    "bg-gray-50 px-5 py-3 border-t border-gray-100 flex gap-2 overflow-x-auto",
+                                    viewMode === 'list' && "bg-transparent p-0 border-0 md:w-auto"
+                                )}>
+                                    {availableActions.map((action) => (
+                                        <button
+                                            key={action.value}
+                                            onClick={() => handleStatusChange(order._id, action.value)}
+                                            className={clsx(
+                                                "flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap",
+                                                action.color
+                                            )}
+                                        >
+                                            <action.icon size={14} />
+                                            <span>{action.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                         </div>
                     );
                 })}
-
-                {orders.length === 0 && (
-                    <div className="text-center p-12 bg-white rounded-xl border border-gray-200 text-gray-500">
-                        No active orders found.
-                    </div>
-                )}
             </div>
+
+            {orders.length === 0 && (
+                <div className="text-center p-12 bg-white rounded-xl border border-gray-200 text-gray-500">
+                    No active orders found.
+                </div>
+            )}
         </div>
+        </div >
     );
 }

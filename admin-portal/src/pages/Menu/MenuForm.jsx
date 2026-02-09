@@ -15,6 +15,8 @@ export default function MenuForm() {
         description: '',
         price: '',
         category: '',
+        stock: 0,
+        isAvailable: true,
     });
     const [file, setFile] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -47,6 +49,8 @@ export default function MenuForm() {
                     description: item.description || '',
                     price: item.price,
                     category: item.category,
+                    stock: item.stock || 0,
+                    isAvailable: item.isAvailable !== undefined ? item.isAvailable : true,
                 });
                 setExistingImage(item.imageUrl);
             }
@@ -56,7 +60,8 @@ export default function MenuForm() {
     };
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        setFormData({ ...formData, [e.target.name]: value });
     };
 
     const handleFileChange = (e) => {
@@ -198,6 +203,33 @@ export default function MenuForm() {
                             <option value="Dessert">Dessert</option>
                             <option value="Drinks">Drinks</option>
                         </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Stock Quantity</label>
+                            <input
+                                name="stock"
+                                type="number"
+                                min="0"
+                                value={formData.stock}
+                                onChange={handleChange}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-blue outline-none"
+                                placeholder="0"
+                            />
+                        </div>
+                        <div className="flex items-end pb-3">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    name="isAvailable"
+                                    checked={formData.isAvailable}
+                                    onChange={handleChange}
+                                    className="w-5 h-5 text-brand-blue rounded focus:ring-brand-blue border-gray-300"
+                                />
+                                <span className="text-gray-700 font-medium">Available for Order</span>
+                            </label>
+                        </div>
                     </div>
 
                     <div>

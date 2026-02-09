@@ -36,6 +36,8 @@ const MenuSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   category: { type: String, required: true },
   imageUrl: { type: String }, // Stores the S3 Key or full URL
+  stock: { type: Number, default: 0 }, // Inventory tracking
+  isAvailable: { type: Boolean, default: true }, // Quick toggle
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -195,8 +197,15 @@ const authHandlers = {
 };
 
 const menuHandlers = {
-  getAll: async () => {
-    const items = await Menu.find().sort({ createdAt: -1 });
+  getAll: async (event) => {
+    const params = event.queryStringParameters || {};
+    const query = {};
+
+    if (params.category) query.category = params.category;
+    if (params.search) query.name = { $regex: params.search, $options: 'i' };
+    if (params.available === 'true') query.isAvailable = true;
+
+    const items = await Menu.find(query).sort({ createdAt: -1 });
     return sendResponse(200, items);
   },
 
@@ -252,6 +261,8 @@ const menuHandlers = {
       description,
       price,
       category,
+      stock: data.stock || 0,
+      isAvailable: data.isAvailable !== undefined ? data.isAvailable : true,
     });
 
     const key = `menu/${newItem._id}-${Date.now()}-${fileName}`;
@@ -332,8 +343,19 @@ const menuHandlers = {
 };
 
 const orderHandlers = {
-  getAll: async () => {
-    const orders = await Order.find().sort({ createdAt: -1 });
+  getAll: async (event) => {
+    const params = event.queryStringParameters || {};
+    const query = {};
+
+    if (params.status) query.status = params.status;
+    if (params.startDate && params.endDate) {
+      query.createdAt = {
+        $gte: new Date(params.startDate),
+        $lte: new Date(params.endDate)
+      };
+    }
+
+    const orders = await Order.find(query).sort({ createdAt: -1 });
     return sendResponse(200, orders);
   },
 
@@ -345,9 +367,38 @@ const orderHandlers = {
 
   update: async (id, data) => {
     const { status } = data;
-    const updated = await Order.findByIdAndUpdate(id, { status }, { new: true });
-    if (!updated) return sendResponse(404, { error: 'Order not found' });
-    return sendResponse(200, updated);
+    const order = await Order.findById(id);
+    if (!order) return sendResponse(404, { error: 'Order not found' });
+
+    // Strict Status Transitions
+    const validTransitions = {
+      pending: ['preparing', 'cancelled'],
+      preparing: ['served', 'cancelled'],
+      served: ['paid', 'cancelled'],
+      paid: [], // Terminal state
+      cancelled: [] // Terminal state
+    };
+
+    const allowed = validTransitions[order.status];
+    if (status && !allowed.includes(status) && order.status !== status) {
+      // Allow admin to force update if needed? For now strict.
+      // Actually, let's allow going to 'cancelled' from anywhere just in case, 
+      // but the map above handles it.
+      // What if we need to revert? e.g. paid -> pending (mistake).
+      // Real productions usually don't allow reverting simple status, you have to refund.
+      // But for this app, maybe we act strict or allow 'admin override'.
+      // Let's stick to the requested validation.
+      return sendResponse(400, {
+        error: `Invalid status transition from ${order.status} to ${status}. Allowed: ${allowed.join(', ')}`
+      });
+    }
+
+    // If updating status, proceed
+    if (status) order.status = status;
+
+    // We can also allow updating other fields if needed, but primarily status for this handler.
+    await order.save();
+    return sendResponse(200, order);
   },
 
   create: async (data) => {
@@ -355,13 +406,47 @@ const orderHandlers = {
 
     if (!items || items.length === 0) return sendResponse(400, { error: 'No items in order' });
 
+    // 1. Validate Stock and Calculate Price
+    const orderItems = [];
+    let calculatedTotal = 0;
+
+    for (const item of items) {
+      const menuId = item.id || item.menuId || item._id; // Handle various inputs
+      const menuItem = await Menu.findById(menuId);
+
+      if (!menuItem) {
+        return sendResponse(400, { error: `Menu item not found: ${item.name}` });
+      }
+
+      if (!menuItem.isAvailable) {
+        return sendResponse(400, { error: `Item is currently unavailable: ${menuItem.name}` });
+      }
+
+      if (menuItem.stock < item.quantity) {
+        return sendResponse(400, { error: `Insufficient stock for: ${menuItem.name}. Available: ${menuItem.stock}` });
+      }
+
+      // Decrement Inventory
+      menuItem.stock -= item.quantity;
+      if (menuItem.stock === 0) menuItem.isAvailable = false; // Auto-disable if 0? Optional.
+      await menuItem.save();
+
+      orderItems.push({
+        menuId: menuItem._id,
+        name: menuItem.name,
+        quantity: item.quantity,
+        priceAtOrder: menuItem.price // Snapshot price
+      });
+      calculatedTotal += menuItem.price * item.quantity;
+    }
+
     const newOrder = await Order.create({
       userId,
       customerName,
       customerPhone,
       deliveryAddress,
-      items,
-      totalAmount,
+      items: orderItems,
+      totalAmount: calculatedTotal, // Use calculated total for security
       status: 'pending' // Default
     });
 
@@ -409,7 +494,7 @@ exports.handler = async (event) => {
     }
 
     // --- Public Routes ---
-    if (httpMethod === 'GET' && isRoute('/menu')) return await menuHandlers.getAll();
+    if (httpMethod === 'GET' && isRoute('/menu')) return await menuHandlers.getAll(event);
     if (httpMethod === 'POST' && isRoute('/auth/register')) return await authHandlers.register(parseBody(event));
     if (httpMethod === 'POST' && isRoute('/auth/login')) return await authHandlers.login(parseBody(event));
     if (httpMethod === 'POST' && isRoute('/auth/user/register')) return await authHandlers.registerUser(parseBody(event));
@@ -453,7 +538,7 @@ exports.handler = async (event) => {
     if (httpMethod === 'POST' && isRoute('/menu')) return await menuHandlers.create(parseBody(event));
     if (httpMethod === 'PUT' && cleanPath.includes('/menu/') && !isRoute('/menu')) return await menuHandlers.update(getIdFromPath(), parseBody(event));
     if (httpMethod === 'DELETE' && cleanPath.includes('/menu/') && !isRoute('/menu')) return await menuHandlers.delete(getIdFromPath());
-    if (httpMethod === 'GET' && isRoute('/orders')) return await orderHandlers.getAll();
+    if (httpMethod === 'GET' && isRoute('/orders')) return await orderHandlers.getAll(event);
     if (httpMethod === 'GET' && cleanPath.includes('/orders/') && !isRoute('/orders')) return await orderHandlers.getOne(getIdFromPath());
     if (httpMethod === 'PUT' && cleanPath.includes('/orders/') && !isRoute('/orders')) return await orderHandlers.update(getIdFromPath(), parseBody(event));
 

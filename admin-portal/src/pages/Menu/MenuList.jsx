@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
-import { Plus, Edit, Trash2, Upload, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit, Trash2, Upload, FileSpreadsheet, Search, Check, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -8,14 +8,25 @@ import toast from 'react-hot-toast';
 export default function MenuList() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(search), 500);
+        return () => clearTimeout(timer);
+    }, [search]);
 
     useEffect(() => {
         fetchItems();
-    }, []);
+    }, [debouncedSearch]);
 
     const fetchItems = async () => {
         try {
-            const { data } = await api.get('/menu');
+            setLoading(true);
+            const params = new URLSearchParams();
+            if (debouncedSearch) params.append('search', debouncedSearch);
+
+            const { data } = await api.get(`/menu?${params.toString()}`);
             setItems(data);
         } catch (error) {
             toast.error('Failed to load menu items');
@@ -83,6 +94,16 @@ export default function MenuList() {
                 <h2 className="text-3xl font-bold text-gray-800">Menu Items</h2>
                 <div className="flex space-x-3">
 
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search menu..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-blue outline-none"
+                        />
+                        <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                    </div>
 
                     <label className="bg-orange-500 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-orange-600 transition cursor-pointer shadow-sm">
                         <Upload size={20} />
@@ -109,6 +130,8 @@ export default function MenuList() {
                             <th className="p-4 w-20">Image</th>
                             <th className="p-4">Name</th>
                             <th className="p-4">Category</th>
+                            <th className="p-4 text-center">Stock</th>
+                            <th className="p-4 text-center">Status</th>
                             <th className="p-4 text-right">Price</th>
                             <th className="p-4 text-center">Actions</th>
                         </tr>
@@ -131,6 +154,15 @@ export default function MenuList() {
                                     <span className="px-3 py-1 bg-blue-50 text-brand-blue text-xs rounded-full font-medium">
                                         {item.category}
                                     </span>
+                                </td>
+                                <td className="p-4 text-center font-mono font-medium">
+                                    {item.stock > 0 ? item.stock : <span className="text-red-500">Out</span>}
+                                </td>
+                                <td className="p-4 text-center">
+                                    {item.isAvailable ?
+                                        <span className="text-green-600 bg-green-50 px-2 py-1 rounded text-xs font-bold">Active</span> :
+                                        <span className="text-gray-400 bg-gray-100 px-2 py-1 rounded text-xs font-bold">Inactive</span>
+                                    }
                                 </td>
                                 <td className="p-4 text-right font-bold text-gray-700">{formatPrice(item.price)}</td>
                                 <td className="p-4 flex justify-center space-x-2">

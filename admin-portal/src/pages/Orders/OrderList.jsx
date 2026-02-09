@@ -7,6 +7,7 @@ import clsx from 'clsx';
 export default function OrderList() {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         fetchOrders();
@@ -14,9 +15,24 @@ export default function OrderList() {
 
     const fetchOrders = async () => {
         try {
-            const { data } = await api.get('/orders');
+            setError(null);
+            console.log('Fetching orders...');
+            const response = await api.get('/orders');
+            console.log('Orders API Response:', response);
+
+            const { data } = response;
+            if (!Array.isArray(data)) {
+                console.error('Data is not an array:', data);
+                setError('Received invalid data format from server (check console)');
+                setOrders([]);
+                return;
+            }
+
             setOrders(data);
         } catch (error) {
+            console.error('Fetch orders error:', error);
+            const msg = error.response?.data?.error || error.message || 'Failed to load orders';
+            setError(msg);
             toast.error('Failed to load orders');
         } finally {
             setLoading(false);
@@ -62,6 +78,11 @@ export default function OrderList() {
     };
 
     if (loading) return <div className="text-center p-10">Loading orders...</div>;
+    if (error) return <div className="text-center p-10 text-red-600 bg-red-50 rounded-lg m-4 border border-red-200">
+        <p className="font-bold">Error loading orders:</p>
+        <p>{error}</p>
+        <button onClick={fetchOrders} className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Retry</button>
+    </div>;
 
     return (
         <div>

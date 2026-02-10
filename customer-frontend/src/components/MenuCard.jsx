@@ -30,6 +30,10 @@ export default function MenuCard({ item }) {
                     <h3 className="font-heading font-bold text-gray-800 text-xl group-hover:text-brand-orange transition-colors">
                         {item.name}
                     </h3>
+                    <div className="flex flex-col items-end">
+                        {!item.isAvailable && <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full font-bold">Unavailable</span>}
+                        {item.stock === 0 && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full font-bold">Out of Stock</span>}
+                    </div>
                 </div>
 
                 <p className="text-gray-500 text-sm mb-4 line-clamp-2 flex-grow leading-relaxed">
@@ -39,10 +43,14 @@ export default function MenuCard({ item }) {
                 {/* Add Button */}
                 <button
                     onClick={() => addToCart(item)}
-                    className="w-full bg-brand-orange text-white hover:bg-orange-600 font-bold py-3 px-4 rounded-xl flex items-center justify-center space-x-2 transition-all duration-300 active:scale-95 shadow-md hover:shadow-orange-500/30"
+                    disabled={!item.isAvailable || item.stock === 0}
+                    className={`w-full font-bold py-3 px-4 rounded-xl flex items-center justify-center space-x-2 transition-all duration-300 shadow-md ${(!item.isAvailable || item.stock === 0)
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-brand-orange text-white hover:bg-orange-600 active:scale-95 hover:shadow-orange-500/30'
+                        }`}
                 >
                     <Plus size={20} />
-                    <span>Add to Cart</span>
+                    <span>{item.stock === 0 ? 'Out of Stock' : 'Add to Cart'}</span>
                 </button>
             </div>
         </div>
